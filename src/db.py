@@ -22,7 +22,7 @@ class DonationDB:
                 message TEXT UNIQUE NOT NULL,
                 amount REAL NOT NULL,
                 last_date TEXT NOT NULL,
-                sub TEXT NOT NULL,
+                sub TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
