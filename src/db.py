@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from api import DonationAlertsAPI
 
 
@@ -29,31 +29,65 @@ class DonationDB:
         ''')
         self.connection.commit()
     
-    def save_donation(self, message, amount, date):
+    def _calculate_sub_date(self, base_date, amount):
+        months_to_add = int(amount // 200)
+
+        if isinstance(base_date, str):
+            base_date = datetime.fromisoformat(base_date.replace('Z', '+00:00'))
+        elif not isinstance(base_date, datetime):
+            base_date = datetime.now()
+
+        new_date = base_date
+        for _ in range(months_to_add):
+            month = new_date.month
+            year = new_date.year
+
+            if month == 12:
+                month = 1
+                year += 1
+            else:
+                month += 1
+
+            day = min(new_date.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
+
+            new_date = new_date.replace(year=year, month=month, day=day)
+
+        return new_date.isoformat()
+    
+    def save_donation(self, message, amount, last_date):
         try:
-            # Проверяем, существует ли запись с таким сообщением
             self.cursor.execute(
-                'SELECT id, amount, date FROM donations WHERE message = ?',
+                'SELECT id, amount, sub FROM donations WHERE message = ?',
                 (message,)
             )
             existing = self.cursor.fetchone()
             
             if existing:
-                # Обновляем существующую запись
                 donation_id = existing[0]
+                old_amount = existing[1]
+                old_sub = existing[2]
+
+                new_amount = old_amount + amount
+
+                if old_sub:
+                    new_sub = self._calculate_sub_date(old_sub, amount)
+                else:
+                    new_sub = self._calculate_sub_date(datetime.now(), amount)
+
                 self.cursor.execute('''
                     UPDATE donations 
-                    SET amount = ?, date = ?, updated_at = CURRENT_TIMESTAMP
+                    SET amount = ?, last_date = ?, sub = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE message = ?
-                ''', (amount, date, message))
+                ''', (new_amount, last_date, new_sub, message))
                 self.connection.commit()
                 return ('updated', donation_id)
             else:
-                # Вставляем новую запись
+                sub_date = self._calculate_sub_date(datetime.now(), amount)
+                
                 self.cursor.execute('''
-                    INSERT INTO donations (message, amount, date)
-                    VALUES (?, ?, ?)
-                ''', (message, amount, date))
+                    INSERT INTO donations (message, amount, last_date, sub)
+                    VALUES (?, ?, ?, ?)
+                ''', (message, amount, last_date, sub_date))
                 self.connection.commit()
                 return ('inserted', self.cursor.lastrowid)
                 
@@ -73,13 +107,13 @@ class DonationDB:
         for donation in donations:
             message = donation.get('message', '')
             amount = donation.get('amount', 0)
-            date = donation.get('date', '')
+            last_date = donation.get('last_date', '')
             
             if not message:
                 stats['failed'] += 1
                 continue
             
-            action, _ = self.save_donation(message, amount, date)
+            action, _ = self.save_donation(message, amount, last_date)
             
             if action == 'inserted':
                 stats['inserted'] += 1
@@ -91,12 +125,12 @@ class DonationDB:
         return stats
     
     def get_all_donations(self):
-        self.cursor.execute('SELECT * FROM donations ORDER BY date DESC')
+        self.cursor.execute('SELECT * FROM donations ORDER BY last_date DESC')
         return self.cursor.fetchall()
     
     def get_user_donations(self, username):
         self.cursor.execute('''
-            SELECT amount, date, sub
+            SELECT amount, last_date, sub
             FROM donations 
             WHERE message LIKE ?
         ''', (f'%{username}%',))
