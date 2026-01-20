@@ -34,27 +34,6 @@ async def cmd_start(message: Message):
 
 @router.message(IsPrivateChat(), F.text == "Приватка")
 async def start_fund(message: Message):
-    user_id = message.from_user.id
-    full_name = message.from_user.full_name
-
-    # Проверяем, есть ли фонд у пользователя
-    existing = next((f for f in funds if f[0] == user_id), None)
-
-    if existing is None:
-        # Добавляем новый фонд: (user_id, depositors=0, balance=0)
-        funds.append((user_id, 0, 0))
-        text = (
-            f"Приветствуем! {full_name}\n\n"
-            "Страховой фонд успешно создан!\n"
-            "Баланс фонда: 0"
-        )
-    else:
-        balance = existing[2]
-        text = (
-            f"Баланс вашего страхового фонда: {balance}.\n"
-            "Чтобы создать новый фонд, необходимо расформировать старый, нажмите на кнопку сброса!"
-        )
-
     await message.answer(text, reply_markup=get_main_keyboard())
 
 @router.message(IsPrivateChat(), F.text == "Я")

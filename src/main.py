@@ -9,6 +9,7 @@ from aiogram.enums import ParseMode
 
 from filters.chat_type import IsPrivateChat  
 from handlers.user.message import router as user_router
+from handlers.channel.manager import router as channel_router
 
 async def main():
     environ['TZ'] = 'Europe/Moscow'
@@ -23,7 +24,9 @@ async def main():
     bot_info = await bot.get_me()
 
     dp = Dispatcher(bot=bot)
+    
     dp.include_router(user_router)
+    dp.include_router(channel_router)
 
     dp.message.filter(IsPrivateChat())
 
