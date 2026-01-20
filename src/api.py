@@ -133,34 +133,3 @@ class DonationAlertsAPI:
         
         print(f"\nДанные сохранены в файл: {filename}")
     
-    
-def main():
-    """Основная функция для демонстрации работы скрипта"""
-    
-    # ВАЖНО: Замените на ваш реальный access_token
-    ACCESS_TOKEN = "YOUR_ACCESS_TOKEN_HERE"
-    
-    # Создаем экземпляр API клиента
-    api = DonationAlertsAPI(ACCESS_TOKEN)
-    
-    # Пример 1: Получить все донаты за последний месяц
-    print("Загрузка донатов...")
-    end_date = datetime.now()
-    start_date = datetime(2025, 1, 1)  # Начало января 2025
-    
-    donations = api.get_all_donations_in_range(start_date, end_date)
-    
-    # Вывод информации о донатах
-    api.print_donations_summary(donations)
-    
-    # Экспорт в JSON
-    api.export_to_json(donations, "donations_january_2025.json")
-    
-    # Пример 2: Получить донаты без фильтрации по дате (первая страница)
-    # donations_page1 = api.get_donations(page=1)
-    # if donations_page1 and 'data' in donations_page1:
-    #     api.print_donations_summary(donations_page1['data'])
-
-
-if __name__ == "__main__":
-    main()
