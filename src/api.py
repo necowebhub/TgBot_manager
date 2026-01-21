@@ -86,8 +86,8 @@ class DonationAlertsAPI:
                 if end_date and donation_date > end_date:
                     continue  # Пропускаем более новые донаты
                 
-                if (not start_date or donation_date >= start_date) and \
-                   (not end_date or donation_date <= end_date):
+                if (not start_date or donation_date >= start_date) and (not end_date or donation_date <= end_date):
+
                     all_donations.append(donation)
             
             # Проверяем наличие следующей страницы
