@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from os import environ
+from datetime import time
 
 from decouple import config
 from aiogram import Bot, Dispatcher
@@ -10,6 +11,7 @@ from aiogram.enums import ParseMode
 from filters.chat_type import IsPrivateChat  
 from handlers.user.message import router as user_router
 from handlers.channel.manager import router as channel_router
+from scheduler import schedule_daily_check
 
 async def main():
     environ['TZ'] = 'Europe/Moscow'
@@ -24,13 +26,21 @@ async def main():
     bot_info = await bot.get_me()
 
     dp = Dispatcher(bot=bot)
-    
+
     dp.include_router(user_router)
     dp.include_router(channel_router)
 
     dp.message.filter(IsPrivateChat())
 
     print(f'Bot {bot_info.full_name} started (@{bot_info.username}. ID: {bot_info.id})')
+
+    CHANNEL_ID = config("CHANNEL_ID")
+
+    CHECK_HOUR = int(config("CHECK_HOUR", default="12"))
+    CHECK_MINUTE = int(config("CHECK_MINUTE", default="0"))
+    check_time = time(CHECK_HOUR, CHECK_MINUTE)
+
+    asyncio.create_task(schedule_daily_check(bot, CHANNEL_ID, check_time))
 
     try:
         await dp.start_polling(bot)
