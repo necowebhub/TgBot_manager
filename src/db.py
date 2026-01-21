@@ -136,6 +136,15 @@ class DonationDB:
         ''', (f'%{username}%',))
         return self.cursor.fetchall()
     
+    def get_expired_subscriptions(self):
+        current_time = datetime.now().isoformat()
+        self.cursor.execute('''
+            SELECT id, message, sub
+            FROM donations
+            WHERE sub < ?
+        ''', (current_time,))
+        return self.cursor.fetchall()
+    
     def close(self):
         if self.connection:
             self.connection.close()
@@ -174,5 +183,13 @@ def user_donations(username):
     try:
         stats = db.get_user_donations(username)
         return stats
+    finally:
+        db.close()
+
+def get_expired_users():
+    db = DonationDB()
+    try:
+        expired = db.get_expired_subscriptions()
+        return expired
     finally:
         db.close()
