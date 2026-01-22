@@ -1,34 +1,38 @@
 import sqlite3
 from datetime import datetime, timedelta
+from contextlib import contextmanager
 from api import DonationAlertsAPI
 
 
 class DonationDB:
     def __init__(self, db_path='donations.db'):
         self.db_path = db_path
-        self.connection = None
-        self.cursor = None
-        self._connect()
-        self._create_table()
+        self._init_database()
     
-    def _connect(self):
-        self.connection = sqlite3.connect(self.db_path)
-        self.cursor = self.connection.cursor()
+    def _init_database(self):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS donations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message TEXT UNIQUE NOT NULL,
+                    amount REAL NOT NULL,
+                    last_date TEXT NOT NULL,
+                    sub TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
     
-    def _create_table(self):
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS donations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message TEXT UNIQUE NOT NULL,
-                amount REAL NOT NULL,
-                last_date TEXT NOT NULL,
-                sub TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        self.connection.commit()
-    
+    @contextmanager
+    def _get_connection(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
     def _calculate_sub_date(self, base_date, amount):
         months_to_add = int(amount // 200)
 
@@ -56,11 +60,14 @@ class DonationDB:
     
     def save_donation(self, message, amount, last_date):
         try:
-            self.cursor.execute(
+            with self._get_connection() as conn:
+            localcursor = conn.cursor()
+            
+            localcursor.execute(
                 'SELECT id, amount, sub FROM donations WHERE message = ?',
                 (message,)
             )
-            existing = self.cursor.fetchone()
+            existing = localcursor.fetchone()
             
             if existing:
                 donation_id = existing[0]
@@ -74,26 +81,25 @@ class DonationDB:
                 else:
                     new_sub = self._calculate_sub_date(datetime.now(), amount)
 
-                self.cursor.execute('''
+                localcursor.execute('''
                     UPDATE donations 
                     SET amount = ?, last_date = ?, sub = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE message = ?
                 ''', (new_amount, last_date, new_sub, message))
-                self.connection.commit()
+                conn.commit()
                 return ('updated', donation_id)
             else:
                 sub_date = self._calculate_sub_date(datetime.now(), amount)
                 
-                self.cursor.execute('''
+                localcursor.execute('''
                     INSERT INTO donations (message, amount, last_date, sub)
                     VALUES (?, ?, ?, ?)
                 ''', (message, amount, last_date, sub_date))
-                self.connection.commit()
-                return ('inserted', self.cursor.lastrowid)
+                conn.commit()
+                return ('inserted', localcursor.lastrowid)
                 
         except sqlite3.Error as e:
             print(f"Ошибка при сохранении доната: {e}")
-            self.connection.rollback()
             return (None, None)
     
     def save_donations_batch(self, donations):
@@ -104,57 +110,99 @@ class DonationDB:
             'total': len(donations)
         }
         
-        for donation in donations:
-            message = donation.get('message', '')
-            amount = donation.get('amount', 0)
-            last_date = donation.get('last_date', '')
-            
-            if not message:
-                stats['failed'] += 1
-                continue
-            
-            action, _ = self.save_donation(message, amount, last_date)
-            
-            if action == 'inserted':
-                stats['inserted'] += 1
-            elif action == 'updated':
-                stats['updated'] += 1
-            else:
-                stats['failed'] += 1
-        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                for donation in donations:
+                    message = donation.get('message', '')
+                    amount = donation.get('amount', 0)
+                    last_date = donation.get('last_date', '')
+                    
+                    if not message:
+                        stats['failed'] += 1
+                        continue
+                    
+                    try:
+                        cursor.execute(
+                            'SELECT id, amount, sub FROM donations WHERE message = ?',
+                            (message,)
+                        )
+                        existing = cursor.fetchone()
+                        
+                        if existing:
+                            donation_id = existing[0]
+                            old_amount = existing[1]
+                            old_sub = existing[2]
+
+                            new_amount = old_amount + amount
+
+                            if old_sub:
+                                new_sub = self._calculate_sub_date(old_sub, amount)
+                            else:
+                                new_sub = self._calculate_sub_date(datetime.now(), amount)
+
+                            cursor.execute('''
+                                UPDATE donations 
+                                SET amount = ?, last_date = ?, sub = ?, updated_at = CURRENT_TIMESTAMP
+                                WHERE message = ?
+                            ''', (new_amount, last_date, new_sub, message))
+                            stats['updated'] += 1
+                        else:
+                            sub_date = self._calculate_sub_date(datetime.now(), amount)
+                            
+                            cursor.execute('''
+                                INSERT INTO donations (message, amount, last_date, sub)
+                                VALUES (?, ?, ?, ?)
+                            ''', (message, amount, last_date, sub_date))
+                            stats['inserted'] += 1
+
+                    except sqlite3.Error as e:
+                        print(f"Ошибка при обработке доната '{message}': {e}")
+                        stats['failed'] += 1
+                
+                conn.commit()
+
+        except sqlite3.Error as e:
+            print(f"Критическая ошибка при пакетном сохранении: {e}")
+            stats['failed'] = stats['total']
+            stats['inserted'] = 0
+            stats['updated'] = 0
+
         return stats
     
     def get_all_donations(self):
-        self.cursor.execute('SELECT * FROM donations ORDER BY last_date DESC')
-        return self.cursor.fetchall()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM donations ORDER BY last_date DESC')
+            return cursor.fetchall()
     
     def get_user_donations(self, username):
-        self.cursor.execute('''
-            SELECT amount, last_date, sub
-            FROM donations 
-            WHERE message LIKE ?
-        ''', (f'%{username}%',))
-        return self.cursor.fetchall()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT amount, last_date, sub
+                FROM donations 
+                WHERE message LIKE ?
+            ''', (f'%{username}%',))
+            return cursor.fetchall()
     
     def get_expired_subscriptions(self):
         current_time = datetime.now().isoformat()
-        self.cursor.execute('''
-            SELECT id, message, sub
-            FROM donations
-            WHERE sub < ?
-        ''', (current_time,))
-        return self.cursor.fetchall()
-    
-    def close(self):
-        if self.connection:
-            self.connection.close()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, message, sub
+                FROM donations
+                WHERE sub < ?
+            ''', (current_time,))
+            return cursor.fetchall()
 
 
 def process_donations(start_date, end_date, ACCESS_TOKEN):
     print(f"Получение донатов за период: {start_date} - {end_date}")
     
     api = DonationAlertsAPI(ACCESS_TOKEN)
-    
     donations_data = api.get_all_donations_in_range(start_date, end_date)
     
     if not donations_data:
@@ -162,34 +210,17 @@ def process_donations(start_date, end_date, ACCESS_TOKEN):
         return
     
     db = DonationDB()
+    stats = db.save_donations_batch(donations_data)
     
-    try:
-        stats = db.save_donations_batch(donations_data)
-        """
-        print("\n=== Статистика обработки ===")
-        print(f"Всего обработано: {stats['total']}")
-        print(f"Добавлено новых: {stats['inserted']}")
-        print(f"Обновлено: {stats['updated']}")
-        print(f"Ошибок: {stats['failed']}")
-        """
-        return stats    
-    finally:
-        db.close()
+    return stats    
+    
 
 def user_donations(username):
     print(f"Получение донатов пользователя {username}")
     db = DonationDB()
+    return db.get_user_donations(username)
 
-    try:
-        stats = db.get_user_donations(username)
-        return stats
-    finally:
-        db.close()
 
 def get_expired_users():
     db = DonationDB()
-    try:
-        expired = db.get_expired_subscriptions()
-        return expired
-    finally:
-        db.close()
+    return db.get_expired_subscriptions()

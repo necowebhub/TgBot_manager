@@ -5,9 +5,15 @@ from datetime import datetime
 from filters.chat_type import IsPrivateChat
 from keyboards.user import get_main_keyboard, get_donate_button
 
-from ...db import user_donations
+from db import user_donations
 
 router = Router()
+
+def validate_username(username: str) -> bool:
+    if not username:
+        return False
+    import re
+    return bool(re.match(r'^[a-zA-Z0-9_]{5,32}$', username))
 
 @router.message(IsPrivateChat(), F.text == "/start")
 async def cmd_start(message: Message):
@@ -30,6 +36,14 @@ async def cmd_start(message: Message):
         await message.answer(text)
         return text
     
+    if not validate_username(username):
+        text += (
+            "\n\nВаш username содержит недопустимые символы.\n"
+            "Username должен содержать только буквы, цифры и подчёркивание."
+        )
+        await message.answer(text)
+        return
+    
     await message.answer(text, reply_markup=get_main_keyboard())
 
 @router.message(IsPrivateChat(), F.text == "Приватка")
@@ -44,7 +58,20 @@ async def get_invite_link(message: Message):
         await message.answer(text, reply_markup=get_main_keyboard())
         return
     
-    donations = user_donations(username)
+    if not validate_username(username):
+        text = (
+            "⚠️ Ваш username содержит недопустимые символы.\n"
+            "Username должен содержать только буквы, цифры и подчёркивание."
+        )
+        await message.answer(text, reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        donations = user_donations(username)
+    except Exception as e:
+        text = f"Ошибка при получении данных: {str(e)}\nОбратитесь к администратору @necoweb"
+        await message.answer(text, reply_markup=get_main_keyboard())
+        return
 
     if not donations:
         text = (
@@ -62,7 +89,7 @@ async def get_invite_link(message: Message):
 
     try:
         sub_date = datetime.fromisoformat(sub_date_str.replace('Z', '+00:00'))
-        current_date = datetime.now(sub_date.tzinfo)
+        current_date = datetime.now(sub_date.tzinfo) if sub_date.tzinfo else datetime.now()
 
         if current_date > sub_date:
             text = (
@@ -76,6 +103,7 @@ async def get_invite_link(message: Message):
             return
     
     except (ValueError, AttributeError) as e:
+        print(f"Ошибка парсинга даты для @{username}: {e}")
         text = "Ошибка при проверке даты подписки. Обратитесь к разработчику."
         await message.answer(text, reply_markup=get_main_keyboard())
         return
@@ -100,6 +128,7 @@ async def get_invite_link(message: Message):
         )
 
     except Exception as e:
+        print(f"Ошибка создания ссылки для @{username}: {e}")
         text = (
             f"Ошибка при создании ссылки-приглашения: {str(e)}\n\n"
             "Обратитесь к администратору @necoweb"
@@ -117,8 +146,21 @@ async def show_balance(message: Message):
         )
         await message.answer(text, reply_markup=get_main_keyboard())
         return
+    
+    if not validate_username(username):
+        text = (
+            "Ваш username содержит недопустимые символы."
+        )
+        await message.answer(text, reply_markup=get_main_keyboard())
+        return
 
-    donations = user_donations(username)
+    try:
+        donations = user_donations(username)
+    except Exception as e:
+        text = f"Ошибка при получении данных: {str(e)}"
+        await message.answer(text, reply_markup=get_main_keyboard())
+        return
+
     if not donations:
         text = (
             "Донаты не найдены. Убедитесь, что ваш ник указан в сообщении доната."
@@ -134,19 +176,24 @@ async def show_balance(message: Message):
 
     try:
         sub_date = datetime.fromisoformat(sub_date_str.replace('Z', '+00:00'))
-        current_date = datetime.now(sub_date.tzinfo)
+        current_date = datetime.now(sub_date.tzinfo) if sub_date.tzinfo else datetime.now()
 
         if current_date > sub_date:
             status = "Истекла"
+            status_emoji = "🔴"
         else:
             days_left = (sub_date - current_date).days
             status = f"Активна (осталось {days_left} дней)"
+            status_emoji = "🟢"
 
-    except:
-        status = "Неизвестно"
+    except Exception as e:
+        print(f"Ошибка парсинга даты для @{username}: {e}")
+        status = "Ошибка определения статуса"
+        status_emoji = "⚠️"
         sub_date_str = "Ошибка определения даты"
 
     text = (
+        f"{status_emoji} <b>Статус подписки</b>\n\n"
         f'Username: @{username}\n'
         f'Сумма донатов: {amount} руб.\n'
         f'Дата последнего доната: {last_date}\n'
@@ -171,14 +218,14 @@ async def donate_url(message: Message):
         return
     
     text = (
-        f"Для оплаты подписки нажмите кнопку ниже.\n\n"
+        f"<b>Оплата подписки</b>\n\n"
         f"ВАЖНО: В сообщении доната обязательно укажите ваш username: @{username}\n\n"
-        f"Каждые 200 рублей = 1 месяц подписки\n"
-        f"Например:\n"
+        f"Тарифы:\n"
         f"• 200 руб = 1 месяц\n"
         f"• 400 руб = 2 месяца\n"
         f"• 600 руб = 3 месяца\n\n"
-        f"После оплаты подождите до 1 часа для обновления базы данных."
+        f"После оплаты подождите до 1 часа для обновления базы данных.\n\n"
+        f"Нажмите кнопку ниже для перехода к оплате:"
     )
 
     await message.answer(text, reply_markup=get_donate_button())

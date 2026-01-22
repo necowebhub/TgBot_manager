@@ -14,10 +14,24 @@ async def extract_username_from_message(message_text):
     if mention_match:
         return mention_match.group(1)
     
+    patterns = [
+        r'(?:username|user|ник|имя пользователя)[\s:=]+(@?\w+)',
+        r'(?:telegram|tg)[\s:=]+(@?\w+)',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, message_text, re.IGNORECASE)
+        if match:
+            username = match.group(1).lstrip('@')
+            if len(username) >= 5 and username.replace('_', '').isalnum():
+                return username
+    
     words = message_text.split()
     for word in words:
-        if len(word) > 3 and word.isalnum():
-            return word
+        clean_word = word.strip('.,!?;:()[]{}"\' ').lstrip('@')
+
+        if (5 <= len(clean_word) <= 32 and clean_word.replace('_', '').isalnum() and not clean_word.isdigit() and re.match(r'^[a-zA-Z0-9_]+$', clean_word)):
+            return clean_word
     
     return None
 
