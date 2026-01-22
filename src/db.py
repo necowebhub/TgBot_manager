@@ -12,7 +12,7 @@ class DonationDB:
     def _init_database(self):
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            self.cursor.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS donations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     message TEXT UNIQUE NOT NULL,
@@ -61,43 +61,43 @@ class DonationDB:
     def save_donation(self, message, amount, last_date):
         try:
             with self._get_connection() as conn:
-            localcursor = conn.cursor()
-            
-            localcursor.execute(
-                'SELECT id, amount, sub FROM donations WHERE message = ?',
-                (message,)
-            )
-            existing = localcursor.fetchone()
-            
-            if existing:
-                donation_id = existing[0]
-                old_amount = existing[1]
-                old_sub = existing[2]
+                cursor = conn.cursor()
+                
+                cursor.execute(
+                    'SELECT id, amount, sub FROM donations WHERE message = ?',
+                    (message,)
+                )
+                existing = cursor.fetchone()
+                
+                if existing:
+                    donation_id = existing[0]
+                    old_amount = existing[1]
+                    old_sub = existing[2]
 
-                new_amount = old_amount + amount
+                    new_amount = old_amount + amount
 
-                if old_sub:
-                    new_sub = self._calculate_sub_date(old_sub, amount)
+                    if old_sub:
+                        new_sub = self._calculate_sub_date(old_sub, amount)
+                    else:
+                        new_sub = self._calculate_sub_date(datetime.now(), amount)
+
+                    cursor.execute('''
+                        UPDATE donations 
+                        SET amount = ?, last_date = ?, sub = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE message = ?
+                    ''', (new_amount, last_date, new_sub, message))
+                    conn.commit()
+                    return ('updated', donation_id)
                 else:
-                    new_sub = self._calculate_sub_date(datetime.now(), amount)
-
-                localcursor.execute('''
-                    UPDATE donations 
-                    SET amount = ?, last_date = ?, sub = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE message = ?
-                ''', (new_amount, last_date, new_sub, message))
-                conn.commit()
-                return ('updated', donation_id)
-            else:
-                sub_date = self._calculate_sub_date(datetime.now(), amount)
-                
-                localcursor.execute('''
-                    INSERT INTO donations (message, amount, last_date, sub)
-                    VALUES (?, ?, ?, ?)
-                ''', (message, amount, last_date, sub_date))
-                conn.commit()
-                return ('inserted', localcursor.lastrowid)
-                
+                    sub_date = self._calculate_sub_date(datetime.now(), amount)
+                    
+                    cursor.execute('''
+                        INSERT INTO donations (message, amount, last_date, sub)
+                        VALUES (?, ?, ?, ?)
+                    ''', (message, amount, last_date, sub_date))
+                    conn.commit()
+                    return ('inserted', cursor.lastrowid)
+                    
         except sqlite3.Error as e:
             print(f"Ошибка при сохранении доната: {e}")
             return (None, None)
@@ -177,14 +177,56 @@ class DonationDB:
             cursor.execute('SELECT * FROM donations ORDER BY last_date DESC')
             return cursor.fetchall()
     
+    def _escape_like_pattern(self, pattern):
+        escape_chars = ['%', '_', '[', ']']
+        for char in escape_chars:
+            pattern = pattern.replace(char, f'\\{char}')
+        return pattern
+    
+    def _validate_username(self, username):
+        if not username or not isinstance(username, str):
+            return False
+        
+        if len(username) < 1 or len(username) > 100:
+            return False
+
+        if '\x00' in username:
+            return False
+        
+        return True
+    
     def get_user_donations(self, username):
+        if not self._validate_username(username):
+            print(f"Предупреждение: невалидный username '{username}'")
+            return []
+        
+        username = username.strip()
+        
+        safe_username = self._escape_like_pattern(username)
+        
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT amount, last_date, sub
                 FROM donations 
-                WHERE message LIKE ?
-            ''', (f'%{username}%',))
+                WHERE message LIKE ? ESCAPE '\\'
+            ''', (f'%{safe_username}%',))
+            return cursor.fetchall()
+    
+    def get_user_donations_exact(self, username):
+        if not self._validate_username(username):
+            print(f"Предупреждение: невалидный username '{username}'")
+            return []
+        
+        username = username.strip()
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT amount, last_date, sub
+                FROM donations 
+                WHERE message = ? OR message LIKE ? ESCAPE '\\'
+            ''', (username, f'%@{self._escape_like_pattern(username)}%'))
             return cursor.fetchall()
     
     def get_expired_subscriptions(self):
@@ -212,8 +254,8 @@ def process_donations(start_date, end_date, ACCESS_TOKEN):
     db = DonationDB()
     stats = db.save_donations_batch(donations_data)
     
-    return stats    
-    
+    return stats
+
 
 def user_donations(username):
     print(f"Получение донатов пользователя {username}")
