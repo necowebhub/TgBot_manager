@@ -4,6 +4,9 @@ from datetime import datetime
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from db import get_expired_users
+from logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 
 async def extract_username_from_message(message_text):
@@ -37,15 +40,15 @@ async def extract_username_from_message(message_text):
 
 
 async def check_and_remove_expired_subscriptions(bot: Bot, channel_id: str):
-    print(f"[{datetime.now()}] Начало проверки подписок...")
+    logger.info("Начало проверки истекших подписок...")
     
     expired_users = get_expired_users()
     
     if not expired_users:
-        print("Нет пользователей с истекшей подпиской")
+        logger.info("Нет пользователей с истекшей подпиской")
         return
     
-    print(f"Найдено {len(expired_users)} записей с истекшей подпиской")
+    logger.info(f"Найдено {len(expired_users)} записей с истекшей подпиской")
     
     removed_count = 0
     error_count = 0
@@ -54,7 +57,7 @@ async def check_and_remove_expired_subscriptions(bot: Bot, channel_id: str):
         username = await extract_username_from_message(message_text)
         
         if not username:
-            print(f"Не удалось извлечь username из сообщения: {message_text}")
+            logger.warning(f"Не удалось извлечь username из сообщения: {message_text[:100]}...")
             error_count += 1
             continue
         
@@ -64,26 +67,27 @@ async def check_and_remove_expired_subscriptions(bot: Bot, channel_id: str):
             
             await bot.ban_chat_member(channel_id, user_id_to_ban)
             
-            print(f"✓ Пользователь @{username} удален из канала (подписка до {sub_date})")
+            logger.info(f"Пользователь @{username} удален из канала (подписка до {sub_date})")
             removed_count += 1
             
         except TelegramBadRequest as e:
             if "user not found" in str(e).lower():
-                print(f"✗ Пользователь @{username} не найден в канале")
+                logger.warning(f"Пользователь @{username} не найден в канале")
             elif "not enough rights" in str(e).lower():
-                print(f"✗ Недостаточно прав для удаления @{username}")
+                logger.error(f"Недостаточно прав для удаления @{username}")
             else:
-                print(f"✗ Ошибка при удалении @{username}: {e}")
+                logger.error(f"Ошибка при удалении @{username}: {e}")
             error_count += 1
             
         except Exception as e:
-            print(f"✗ Неожиданная ошибка при обработке @{username}: {e}")
+            logger.error(f"Неожиданная ошибка при обработке @{username}: {e}", exc_info=True)
             error_count += 1
         
         await asyncio.sleep(0.5)
     
-    print(f"\n=== Результаты проверки ===")
-    print(f"Проверено записей: {len(expired_users)}")
-    print(f"Удалено пользователей: {removed_count}")
-    print(f"Ошибок: {error_count}")
-    print(f"[{datetime.now()}] Проверка завершена\n")
+    logger.info(
+        f"Проверка завершена - "
+        f"проверено: {len(expired_users)}, "
+        f"удалено: {removed_count}, "
+        f"ошибок: {error_count}"
+    )

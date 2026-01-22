@@ -6,7 +6,9 @@ from filters.chat_type import IsPrivateChat
 from keyboards.user import get_main_keyboard, get_donate_button
 
 from db import user_donations
+from logger_config import setup_logger
 
+logger = setup_logger(__name__)
 router = Router()
 
 def validate_username(username: str) -> bool:
@@ -17,6 +19,11 @@ def validate_username(username: str) -> bool:
 
 @router.message(IsPrivateChat(), F.text == "/start")
 async def cmd_start(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    
+    logger.info(f"Пользователь {user_id} (@{username}) запустил бота")
+    
     text = (
         "Привет! Я бот для управления подпиской на тг канал стримера Brainnfuq.\n\n"
         "Функционал:\n"
@@ -27,8 +34,8 @@ async def cmd_start(message: Message):
         "По поводу всех вопросов писать разработчику: @necoweb"
     )
 
-    username = message.from_user.username
     if not username:
+        logger.warning(f"Пользователь {user_id} не имеет username")
         text += (
             "\n\nУ вас не установлен username в Telegram.\n"
             "Пожалуйста, установите username в настройках Telegram."
@@ -37,6 +44,7 @@ async def cmd_start(message: Message):
         return text
     
     if not validate_username(username):
+        logger.warning(f"Пользователь {user_id} имеет невалидный username: {username}")
         text += (
             "\n\nВаш username содержит недопустимые символы.\n"
             "Username должен содержать только буквы, цифры и подчёркивание."
@@ -48,9 +56,13 @@ async def cmd_start(message: Message):
 
 @router.message(IsPrivateChat(), F.text == "Приватка")
 async def get_invite_link(message: Message):
+    user_id = message.from_user.id
     username = message.from_user.username
 
+    logger.info(f"Пользователь {user_id} (@{username}) запросил ссылку-приглашение")
+
     if not username:
+        logger.warning(f"Пользователь {user_id} без username запросил приватку")
         text = (
             "У вас не установлен username в Telegram.\n"
             "Пожалуйста, установите username в настройках Telegram."
@@ -59,6 +71,7 @@ async def get_invite_link(message: Message):
         return
     
     if not validate_username(username):
+        logger.warning(f"Пользователь {user_id} с невалидным username запросил приватку: {username}")
         text = (
             "⚠️ Ваш username содержит недопустимые символы.\n"
             "Username должен содержать только буквы, цифры и подчёркивание."
@@ -69,11 +82,13 @@ async def get_invite_link(message: Message):
     try:
         donations = user_donations(username)
     except Exception as e:
+        logger.error(f"Ошибка при получении донатов для @{username}: {e}", exc_info=True)
         text = f"Ошибка при получении данных: {str(e)}\nОбратитесь к администратору @necoweb"
         await message.answer(text, reply_markup=get_main_keyboard())
         return
 
     if not donations:
+        logger.info(f"Донаты не найдены для @{username}")
         text = (
             "Донаты не найдены. Убедитесь, что ваш ник указан в сообщении доната.\n\n"
             "Для получения доступа к приватному каналу необходимо сделать донат "
@@ -92,6 +107,7 @@ async def get_invite_link(message: Message):
         current_date = datetime.now(sub_date.tzinfo) if sub_date.tzinfo else datetime.now()
 
         if current_date > sub_date:
+            logger.info(f"Подписка истекла для @{username} ({sub_date})")
             text = (
                 f"Ваша подписка истекла {sub_date.strftime('%d.%m.%Y')}.\n\n"
                 f"Общая сумма донатов: {amount} руб.\n"
@@ -103,7 +119,7 @@ async def get_invite_link(message: Message):
             return
     
     except (ValueError, AttributeError) as e:
-        print(f"Ошибка парсинга даты для @{username}: {e}")
+        logger.error(f"Ошибка парсинга даты для @{username}: {e}", exc_info=True)
         text = "Ошибка при проверке даты подписки. Обратитесь к разработчику."
         await message.answer(text, reply_markup=get_main_keyboard())
         return
@@ -118,6 +134,8 @@ async def get_invite_link(message: Message):
             name=f'Invite for @{username}'
         )
 
+        logger.info(f"Создана ссылка-приглашение для @{username}")
+        
         text = (
             f"Ваша подписка активна до {sub_date.strftime('%d.%m.%Y')}!\n\n"
             f"Вот ваша персональная ссылка-приглашение в канал:\n"
@@ -128,7 +146,7 @@ async def get_invite_link(message: Message):
         )
 
     except Exception as e:
-        print(f"Ошибка создания ссылки для @{username}: {e}")
+        logger.error(f"Ошибка создания ссылки для @{username}: {e}", exc_info=True)
         text = (
             f"Ошибка при создании ссылки-приглашения: {str(e)}\n\n"
             "Обратитесь к администратору @necoweb"
@@ -138,8 +156,13 @@ async def get_invite_link(message: Message):
 
 @router.message(IsPrivateChat(), F.text == "Я")
 async def show_balance(message: Message):
+    user_id = message.from_user.id
     username = message.from_user.username
+    
+    logger.info(f"Пользователь {user_id} (@{username}) проверяет статус подписки")
+    
     if not username:
+        logger.warning(f"Пользователь {user_id} без username проверяет статус")
         text = (
             "У вас не установлен username в Telegram.\n"
             "Пожалуйста, установите username в настройках Telegram."
@@ -148,6 +171,7 @@ async def show_balance(message: Message):
         return
     
     if not validate_username(username):
+        logger.warning(f"Пользователь {user_id} с невалидным username проверяет статус: {username}")
         text = (
             "Ваш username содержит недопустимые символы."
         )
@@ -157,18 +181,19 @@ async def show_balance(message: Message):
     try:
         donations = user_donations(username)
     except Exception as e:
+        logger.error(f"Ошибка при получении донатов для @{username}: {e}", exc_info=True)
         text = f"Ошибка при получении данных: {str(e)}"
         await message.answer(text, reply_markup=get_main_keyboard())
         return
 
     if not donations:
+        logger.info(f"Донаты не найдены для @{username}")
         text = (
             "Донаты не найдены. Убедитесь, что ваш ник указан в сообщении доната."
         )
         await message.answer(text, reply_markup=get_main_keyboard())
         return
 
-    # Берем первую запись
     donation_data = donations[0]
     amount = donation_data[0]
     last_date = donation_data[1]
@@ -187,11 +212,13 @@ async def show_balance(message: Message):
             status_emoji = "🟢"
 
     except Exception as e:
-        print(f"Ошибка парсинга даты для @{username}: {e}")
+        logger.error(f"Ошибка парсинга даты для @{username}: {e}", exc_info=True)
         status = "Ошибка определения статуса"
         status_emoji = "⚠️"
         sub_date_str = "Ошибка определения даты"
 
+    logger.info(f"Статус подписки для @{username}: {status}")
+    
     text = (
         f"{status_emoji} <b>Статус подписки</b>\n\n"
         f'Username: @{username}\n'
@@ -205,9 +232,13 @@ async def show_balance(message: Message):
 
 @router.message(IsPrivateChat(), F.text == "Донат")
 async def donate_url(message: Message):
+    user_id = message.from_user.id
     username = message.from_user.username
     
+    logger.info(f"Пользователь {user_id} (@{username}) запросил информацию о донате")
+    
     if not username:
+        logger.warning(f"Пользователь {user_id} без username запросил донат")
         text = (
             "У вас не установлен username в Telegram.\n"
             "Пожалуйста, установите username в настройках Telegram, "
@@ -232,6 +263,9 @@ async def donate_url(message: Message):
 
 @router.message(IsPrivateChat())
 async def echo_handler(message: Message):
+    user_id = message.from_user.id
+    logger.debug(f"Неизвестная команда от пользователя {user_id}: {message.text}")
+    
     await message.answer(
         "Неизвестная команда. Используйте кнопки или вручную наберите:\n"
         "- 'Приватка' для получения ссылки-приглашения\n"

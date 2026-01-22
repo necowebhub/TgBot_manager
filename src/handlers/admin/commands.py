@@ -8,8 +8,9 @@ from scheduler import run_immediate_check, run_immediate_sync
 
 from db import DonationDB
 from datetime import datetime
+from logger_config import setup_logger
 
-
+logger = setup_logger(__name__)
 router = Router()
 
 def is_admin(user_id: int) -> bool:
@@ -22,14 +23,17 @@ def is_admin(user_id: int) -> bool:
         admin_ids = [int(id.strip()) for id in admin_ids_str.split(",")]
         return user_id in admin_ids
     except ValueError:
-        print(f"Ошибка: некорректный формат ADMIN_IDS в .env")
+        logger.error("Некорректный формат ADMIN_IDS в .env")
         return False
 
 @router.message(IsPrivateChat(), F.text == "/start")
 async def admin_menu(message: Message):
     if not is_admin(message.from_user.id):
+        logger.warning(f"Попытка доступа к админ-панели от не-админа: {message.from_user.id}")
         await message.answer("У вас нет прав администратора")
         return
+    
+    logger.info(f"Админ {message.from_user.id} открыл админ-панель")
     
     text = (
         "<b>Панель администратора</b>\n\n"
@@ -46,9 +50,12 @@ async def admin_menu(message: Message):
 @router.message(IsPrivateChat(), F.text == "/stats")
 async def admin_stats(message: Message):
     if not is_admin(message.from_user.id):
+        logger.warning(f"Попытка доступа к /stats от не-админа: {message.from_user.id}")
         await message.answer("У вас нет прав администратора")
         return
 
+    logger.info(f"Админ {message.from_user.id} запросил статистику")
+    
     db = DonationDB()
     try:
         all_donations = db.get_all_donations()
@@ -69,8 +76,10 @@ async def admin_stats(message: Message):
             f"Средний донат: <b>{total_amount/total_donations:.2f} руб.</b>" if total_donations > 0 else ""
         )
         
+        logger.info(f"Статистика: всего={total_donations}, активных={active_subs}, истекших={expired_subs}")
         await message.answer(text)
     except Exception as e:
+        logger.error(f"Ошибка при получении статистики: {e}", exc_info=True)
         await message.answer(f"Ошибка при получении статистики: {e}")
     finally:
         db.close()
@@ -78,9 +87,11 @@ async def admin_stats(message: Message):
 @router.message(IsPrivateChat(), F.text == "/sync")
 async def admin_sync_donations(message: Message):
     if not is_admin(message.from_user.id):
+        logger.warning(f"Попытка доступа к /sync от не-админа: {message.from_user.id}")
         await message.answer("У вас нет прав администратора")
         return
     
+    logger.info(f"Админ {message.from_user.id} запустил синхронизацию донатов")
     ACCESS_TOKEN = config("ACCESS_TOKEN")
     
     await message.answer("Запуск синхронизации донатов...")
@@ -95,10 +106,13 @@ async def admin_sync_donations(message: Message):
                 f"Обновлено: <b>{stats['updated']}</b>\n"
                 f"Ошибок: <b>{stats['failed']}</b>"
             )
+            logger.info(f"Синхронизация завершена успешно: {stats}")
         else:
             text = "Новых донатов не найдено"
+            logger.info("Синхронизация: новых донатов не найдено")
         await message.answer(text)
     except Exception as e:
+        logger.error(f"Ошибка при синхронизации: {e}", exc_info=True)
         await message.answer(f"Ошибка при синхронизации: {e}")
 
 @router.message(IsPrivateChat(), F.text == "/check")
@@ -108,20 +122,25 @@ async def admin_check_subscriptions(message: Message):
     member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
 
     if member.status not in ["creator", "administrator"]:
+        logger.warning(f"Попытка доступа к /check от не-админа: {message.from_user.id}")
         await message.answer("Эта команда доступна только администраторам")
         return
     
+    logger.info(f"Админ {message.from_user.id} запустил проверку подписок")
     await message.answer("Запуск проверки подписок...")
     
     try:
         await run_immediate_check(message.bot, CHANNEL_ID)
+        logger.info("Проверка подписок завершена успешно")
         await message.answer("Проверка подписок завершена")
     except Exception as e:
+        logger.error(f"Ошибка при проверке подписок: {e}", exc_info=True)
         await message.answer(f"Ошибка при проверке: {e}")
 
 @router.message(IsPrivateChat(), Command("user"))
 async def admin_user_info(message: Message):
     if not is_admin(message.from_user.id):
+        logger.warning(f"Попытка доступа к /user от не-админа: {message.from_user.id}")
         await message.answer("У вас нет прав администратора")
         return
     
@@ -131,6 +150,7 @@ async def admin_user_info(message: Message):
         return
     
     username = parts[1].strip().lstrip('@')
+    logger.info(f"Админ {message.from_user.id} запросил информацию о пользователе: {username}")
     
     from db import user_donations
     
@@ -138,6 +158,7 @@ async def admin_user_info(message: Message):
         stats = user_donations(username)
         
         if not stats or len(stats) == 0:
+            logger.info(f"Пользователь @{username} не найден в БД")
             await message.answer(f"Пользователь @{username} не найден в базе данных")
             return
         
@@ -168,6 +189,8 @@ async def admin_user_info(message: Message):
             f"Статус: {status}"
         )
         
+        logger.info(f"Информация о пользователе @{username}: сумма={amount}, статус={status}")
         await message.answer(text)
     except Exception as e:
+        logger.error(f"Ошибка при получении информации о пользователе @{username}: {e}", exc_info=True)
         await message.answer(f"Ошибка при получении информации: {e}")
