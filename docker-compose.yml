@@ -4,49 +4,51 @@ version: "3.8"
 services:
   tgbot:
     build: .
-    container_name: tgbot_manager
+    container_name: tgbot_manager # Уникальное имя (не пересекается с marzban)
     restart: unless-stopped
 
-    # Переменные окружения из файла
+    # Переменные окружения
     env_file:
       - .env
 
-    # Монтирование volumes для персистентности данных
+    # Volumes
     volumes:
-      # База данных
       - ./data:/app/data
-      # Логи
       - ./logs:/app/logs
-      # .env файл (опционально, если не используете env_file)
-      # - ./.env:/app/.env:ro
 
-    # Ограничения ресурсов (опционально)
+    # ВАЖНО: Telegram бот не использует порты!
+    # Он работает через polling, поэтому конфликтов с Marzban не будет
+
+    # Ограничения ресурсов (чтобы не мешать Marzban)
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 512M
+          cpus: "0.5" # Максимум 50% одного ядра
+          memory: 512M # Максимум 512MB RAM
         reservations:
-          cpus: "0.25"
-          memory: 256M
+          cpus: "0.25" # Гарантированно 25% ядра
+          memory: 256M # Гарантированно 256MB RAM
 
-    # Настройка логирования Docker
+    # Логирование
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-    # Healthcheck (опционально)
+    # Healthcheck
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import os; os.path.exists('/app/data/donations.db')",
-        ]
+      test: ["CMD-SHELL", "test -f /app/data/donations.db || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+    # ОПЦИОНАЛЬНО: Использовать существующую сеть Marzban
+    # Раскомментируйте, если хотите, чтобы контейнеры были в одной сети
+    # networks:
+    #   - marzban_default
+# ОПЦИОНАЛЬНО: Подключение к внешней сети Marzban
+# networks:
+#   marzban_default:
+#     external: true
