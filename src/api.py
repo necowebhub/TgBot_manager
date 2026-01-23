@@ -29,7 +29,7 @@ class DonationAlertsAPI:
 
         self.access_token = access_token.strip()
         self.headers = {
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json"
         }
         logger.info("DonationAlertsAPI инициализирован")
@@ -84,6 +84,14 @@ class DonationAlertsAPI:
                 params=params,
                 timeout=30
             )
+
+            # debug: что ушло
+            logger.debug("Request headers: %s", response.request.headers)
+            logger.debug("Request url: %s", response.request.url)
+
+            # debug: что вернулось
+            logger.debug("Response status: %s", response.status_code)
+            logger.debug("Response body: %s", response.text)
             return self._handle_response(response)
         
         except DonationAlertsAuthException:
