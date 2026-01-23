@@ -1,0 +1,46 @@
+# .dockerignore
+
+# Виртуальные окружения
+venv/
+env/
+ENV/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Данные
+*.db
+*.db-journal
+
+# Логи
+logs/
+*.log
+
+#Env файлы (будут монтироваться отдельно)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Документация
+*.md
+docs/
+
+# Тестовые файлы
+tests/
+test_*.py

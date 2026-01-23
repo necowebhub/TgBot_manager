@@ -1,0 +1,52 @@
+# docker-compose.yml
+version: "3.8"
+
+services:
+  tgbot:
+    build: .
+    container_name: tgbot_manager
+    restart: unless-stopped
+
+    # Переменные окружения из файла
+    env_file:
+      - .env
+
+    # Монтирование volumes для персистентности данных
+    volumes:
+      # База данных
+      - ./data:/app/data
+      # Логи
+      - ./logs:/app/logs
+      # .env файл (опционально, если не используете env_file)
+      # - ./.env:/app/.env:ro
+
+    # Ограничения ресурсов (опционально)
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+    # Настройка логирования Docker
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Healthcheck (опционально)
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os; os.path.exists('/app/data/donations.db')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

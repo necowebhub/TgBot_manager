@@ -1,11 +1,12 @@
 import logging
 import sys
+import os
 from pathlib import Path
 from datetime import datetime
 
 
 def setup_logger(name: str = __name__, log_level: str = "INFO") -> logging.Logger:
-    log_dir = Path("logs")
+    log_dir = Path(os.getenv('LOG_DIR', '/app/logs'))
     log_dir.mkdir(exist_ok=True)
     
     logger = logging.getLogger(name)
@@ -18,6 +19,7 @@ def setup_logger(name: str = __name__, log_level: str = "INFO") -> logging.Logge
         fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    
     
     file_handler = logging.FileHandler(
         filename=log_dir / f"bot_{datetime.now().strftime('%Y-%m-%d')}.log",

@@ -1,4 +1,6 @@
+import os
 import sqlite3
+from pathlib import Path
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 from api import DonationAlertsAPI
@@ -8,8 +10,12 @@ logger = setup_logger(__name__)
 
 
 class DonationDB:
-    def __init__(self, db_path='donations.db'):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            db_path = os.getenv('DB_PATH', '/app/data/donations.db')
+
         self.db_path = db_path
+
         logger.info(f"Инициализация БД: {db_path}")
         self._init_database()
     
